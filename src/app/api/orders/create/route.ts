@@ -1,0 +1,385 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { randomBytes } from "crypto";
+import { rateLimit } from "@/lib/rate-limit";
+import { isPayOSConfigured } from "@/lib/payos";
+import { onPurchase } from "@/lib/email/automation-triggers";
+import { upsertCrmContactFromOrder } from "@/lib/crm/upsert-from-order";
+import { enrollBundleChildren, isTierPackageSlug } from "@/lib/products/tier-bundles";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Find or create a `subscribers` row for the given auth user, then fire
+ * `onPurchase` automation triggers for the product. Safe to await or
+ * fire-and-forget — never throws.
+ */
+async function triggerPurchaseAutomations(
+  admin: SupabaseClient,
+  userId: string,
+  productId: string
+): Promise<void> {
+  // 1. Find an existing subscriber row by user_id.
+  let subscriberId: string | null = null;
+  const { data: existing } = await admin
+    .from("subscribers")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing) {
+    subscriberId = existing.id as string;
+  } else {
+    // 2. Fall back to creating one from the auth user record.
+    const { data: authResp } = await admin.auth.admin.getUserById(userId);
+    const email = authResp?.user?.email;
+    if (!email) return;
+    const fullName =
+      (authResp.user?.user_metadata?.full_name as string | undefined) ??
+      (authResp.user?.user_metadata?.name as string | undefined) ??
+      null;
+    const { data: inserted } = await admin
+      .from("subscribers")
+      .upsert(
+        {
+          user_id: userId,
+          email,
+          full_name: fullName,
+          status: "active",
+          source: "course_enrollment",
+        },
+        { onConflict: "email" }
+      )
+      .select("id")
+      .single();
+    if (!inserted) return;
+    subscriberId = inserted.id as string;
+  }
+
+  if (!subscriberId) return;
+  await onPurchase(admin, subscriberId, productId);
+}
+
+// Generate a cryptographically random order code
+// Format: DK + 12 random alphanumeric chars (e.g., "DKa3Bf9Kx2Mn")
+// This gives 62^12 ≈ 3.2 × 10^21 possible codes - practically unguessable
+function generateOrderCode(prefix: string = "DK", length = 12): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const maxValid = 256 - (256 % chars.length); // reject values >= this to avoid modulo bias
+  let result = prefix;
+  while (result.length < prefix.length + length) {
+    const bytes = randomBytes(length - (result.length - prefix.length));
+    for (const byte of bytes) {
+      if (byte < maxValid && result.length < prefix.length + length) {
+        result += chars[byte % chars.length];
+      }
+    }
+  }
+  return result;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+    const rateLimitResult = await rateLimit(`orders:${ip}`, 10, 60);
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { error: "Quá nhiều yêu cầu. Vui lòng thử lại sau." },
+        { status: 429, headers: { "Retry-After": String(rateLimitResult.retryAfterSec) } }
+      );
+    }
+
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const { product_id, customer_name, customer_email, customer_phone, coupon_code } = body;
+
+    if (!product_id) {
+      return NextResponse.json({ error: "Thiếu product_id" }, { status: 400 });
+    }
+
+    // Validate product_id is a valid UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(product_id)) {
+      return NextResponse.json({ error: "product_id không hợp lệ" }, { status: 400 });
+    }
+
+    // Validate customer_name if provided
+    if (customer_name && (typeof customer_name !== "string" || customer_name.length > 200)) {
+      return NextResponse.json({ error: "Tên khách hàng không hợp lệ (tối đa 200 ký tự)" }, { status: 400 });
+    }
+
+    // Validate customer_email if provided
+    if (customer_email) {
+      if (typeof customer_email !== "string" || customer_email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer_email)) {
+        return NextResponse.json({ error: "Email không hợp lệ" }, { status: 400 });
+      }
+    }
+
+    // Validate customer_phone if provided
+    if (customer_phone) {
+      if (typeof customer_phone !== "string" || customer_phone.length > 20 || !/^[\d+\s]+$/.test(customer_phone)) {
+        return NextResponse.json({ error: "Số điện thoại không hợp lệ (chỉ chấp nhận số, dấu + và khoảng trắng, tối đa 20 ký tự)" }, { status: 400 });
+      }
+    }
+
+    // Lấy thông tin sản phẩm (dùng admin client để tránh RLS issues)
+    const admin = await createAdminClient();
+
+    const { data: product, error: productError } = await admin
+      .from("products").select("*").eq("id", product_id).single();
+
+    if (productError || !product) {
+      console.error("[Create Order] Product lookup error:", productError?.message);
+      return NextResponse.json({
+        error: "Không tìm thấy sản phẩm"
+      }, { status: 404 });
+    }
+
+    // Nếu miễn phí → enroll ngay
+    if (product.price === 0) {
+      await admin.from("enrollments").upsert({
+        user_id: user.id,
+        product_id,
+        source: "free"
+      }, { onConflict: "user_id,product_id" });
+
+      // Free tier package (rare — but if anh Tuệ sets a tier package to 0đ
+      // for a promo) → also enroll into bundle children so the access flow
+      // stays consistent with paid purchases.
+      if (isTierPackageSlug(product.slug)) {
+        await enrollBundleChildren(admin, user.id, product.slug, null);
+      }
+
+      // Promote CRM journey stage to "Shopper" (negotiation) for free
+      // signups. Email/name from the user profile so /crm/contacts picks
+      // them up automatically. Best-effort — never block enrollment.
+      try {
+        const { data: prof } = await admin
+          .from("profiles")
+          .select("full_name, phone")
+          .eq("id", user.id)
+          .maybeSingle();
+        const userEmail = user.email ?? customer_email ?? null;
+        if (userEmail) {
+          await upsertCrmContactFromOrder(admin, {
+            id: `free:${product_id}:${user.id}`,
+            user_id: user.id,
+            customer_name: prof?.full_name ?? customer_name ?? null,
+            customer_email: userEmail,
+            customer_phone: prof?.phone ?? customer_phone ?? null,
+            amount: 0,
+            paid_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.warn(
+          "[orders/create] CRM upsert (free) failed:",
+          e instanceof Error ? e.message : e
+        );
+      }
+
+      // Fire automation triggers in the background. Failure here must not
+      // block enrollment — best-effort only.
+      void triggerPurchaseAutomations(admin, user.id, product_id).catch((e) =>
+        console.error("[orders/create] onPurchase failed:", e)
+      );
+
+      return NextResponse.json({ success: true, free: true });
+    }
+
+    const orderCode = generateOrderCode();
+    const baseAmount = product.sale_price || product.price;
+
+    if (!baseAmount || baseAmount <= 0) {
+      return NextResponse.json({ error: "Sản phẩm không có giá hợp lệ" }, { status: 400 });
+    }
+
+    // ── Coupon discount ─────────────────────────────────────────
+    let amount = baseAmount;
+    let appliedCouponId: string | null = null;
+    let appliedCouponCode: string | null = null;
+    let appliedCouponUsedCount: number | null = null;
+
+    if (coupon_code && typeof coupon_code === "string") {
+      const normalizedCode = coupon_code.trim().toUpperCase();
+
+      const { data: coupon, error: couponError } = await admin
+        .from("coupons")
+        .select("*")
+        .eq("code", normalizedCode)
+        .single();
+
+      if (couponError || !coupon) {
+        return NextResponse.json({ error: "Mã giảm giá không tồn tại" }, { status: 400 });
+      }
+
+      if (!coupon.is_active) {
+        return NextResponse.json({ error: "Mã giảm giá đã bị vô hiệu hoá" }, { status: 400 });
+      }
+
+      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+        return NextResponse.json({ error: "Mã giảm giá đã hết hạn" }, { status: 400 });
+      }
+
+      if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
+        return NextResponse.json({ error: "Mã giảm giá đã hết lượt sử dụng" }, { status: 400 });
+      }
+
+      if (baseAmount < (coupon.min_order_amount ?? 0)) {
+        return NextResponse.json({ error: "Đơn hàng không đạt giá trị tối thiểu để sử dụng mã này" }, { status: 400 });
+      }
+
+      // Calculate discount
+      let discountAmount: number;
+      if (coupon.discount_type === "percent") {
+        discountAmount = Math.round((baseAmount * coupon.discount_value) / 100);
+      } else {
+        // fixed
+        discountAmount = Math.round(Number(coupon.discount_value));
+      }
+
+      discountAmount = Math.min(discountAmount, baseAmount);
+      amount = Math.max(baseAmount - discountAmount, 0);
+      appliedCouponId = coupon.id;
+      appliedCouponCode = normalizedCode;
+      appliedCouponUsedCount = coupon.used_count ?? 0;
+    }
+
+    // Đọc affiliate ref_code từ cookie dk_ref
+    let refCode = req.cookies.get("dk_ref")?.value?.toUpperCase() || null;
+
+    // Prevent self-referral
+    if (refCode) {
+      const { data: affiliate } = await admin
+        .from("affiliates")
+        .select("user_id")
+        .eq("ref_code", refCode)
+        .eq("status", "active")
+        .single();
+      if (affiliate?.user_id === user.id) {
+        refCode = null; // Don't allow self-referral
+      }
+    }
+
+    // Tạo đơn hàng (kèm ref_code và coupon_code nếu có)
+    const { data: order, error: orderError } = await admin.from("orders").insert({
+      order_code: orderCode,
+      user_id: user.id,
+      product_id,
+      amount,
+      status: "pending",
+      payment_method: "bank_transfer",
+      customer_name: customer_name || user.email,
+      customer_email: customer_email || user.email,
+      customer_phone: customer_phone || null,
+      ref_code: refCode,
+      ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
+    }).select().single();
+
+    if (orderError) {
+      console.error("[Create Order] Insert error:", orderError.message);
+      return NextResponse.json({
+        error: "Không thể tạo đơn hàng. Vui lòng thử lại."
+      }, { status: 500 });
+    }
+
+    // Track this customer in the "Khách quan tâm" CRM list so sales can
+    // follow up if they don't complete payment. Upsert into course_interests
+    // — if they viewed the course before, just bump the marker; otherwise
+    // create a hot-lead row with a clear note for CSKH.
+    try {
+      const checkoutNote = "🛒 Đã vào trang thanh toán nhưng chưa hoàn tất";
+      const { data: existingInterest } = await admin
+        .from("course_interests")
+        .select("id, view_count, notes, status")
+        .eq("user_id", user.id)
+        .eq("product_id", product_id)
+        .maybeSingle();
+
+      if (existingInterest) {
+        // Bump view + ensure status is at least 'new' (don't downgrade
+        // contacted/converted) + prepend checkout note if not already there.
+        const notes = existingInterest.notes ?? "";
+        const updatedNotes = notes.includes(checkoutNote)
+          ? notes
+          : (checkoutNote + (notes ? `\n${notes}` : ""));
+        const updates: Record<string, unknown> = {
+          view_count: (existingInterest.view_count ?? 0) + 1,
+          last_viewed_at: new Date().toISOString(),
+          notes: updatedNotes,
+        };
+        // Bring a 'dismissed' row back to 'new' since they just clicked Buy
+        if (existingInterest.status === "dismissed") updates.status = "new";
+        await admin
+          .from("course_interests")
+          .update(updates)
+          .eq("id", existingInterest.id);
+      } else {
+        await admin.from("course_interests").insert({
+          user_id: user.id,
+          product_id,
+          view_count: 1,
+          first_viewed_at: new Date().toISOString(),
+          last_viewed_at: new Date().toISOString(),
+          status: "new",
+          notes: checkoutNote,
+        });
+      }
+    } catch (interestErr) {
+      console.warn(
+        "[Create Order] Failed to upsert course_interest (non-fatal):",
+        interestErr instanceof Error ? interestErr.message : interestErr
+      );
+    }
+
+    // Increment coupon used_count and record usage
+    if (appliedCouponId && appliedCouponUsedCount !== null && order) {
+      await Promise.all([
+        admin
+          .from("coupons")
+          .update({ used_count: appliedCouponUsedCount + 1 })
+          .eq("id", appliedCouponId),
+        admin
+          .from("coupon_usages")
+          .insert({
+            coupon_id: appliedCouponId,
+            user_id: user.id,
+            order_id: order.id,
+          }),
+      ]);
+    }
+
+    // Thông tin thanh toán
+    const bankAccount = process.env.SEPAY_BANK_ACCOUNT;
+    const bankCode = process.env.SEPAY_BANK_CODE;
+    const hasSepay = !!(bankAccount && bankCode && !bankAccount.includes("your-"));
+    const hasPayOS = isPayOSConfigured();
+
+    const paymentInfo = {
+      order_code: orderCode,
+      amount: order.amount,
+      bank_account: hasSepay ? bankAccount : null,
+      bank_code: hasSepay ? bankCode : null,
+      transfer_content: orderCode,
+      qr_url: hasSepay
+        ? `/api/qr?bank=${bankCode}&acc=${bankAccount}&amount=${order.amount}&des=${orderCode}`
+        : null,
+      manual: !hasSepay && !hasPayOS,
+      sepay_available: hasSepay,
+      payos_available: hasPayOS,
+    };
+
+    return NextResponse.json({ success: true, order, paymentInfo });
+  } catch (err: unknown) {
+    console.error("[Create Order] Error:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "Không thể tạo đơn hàng. Vui lòng thử lại." }, { status: 500 });
+  }
+}
