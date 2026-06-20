@@ -33,7 +33,7 @@ export default function MentorEditForm({ expertise, mentor }: Props) {
   const [shortBio, setShortBio] = useState(mentor?.short_bio ?? "");
   const [bio, setBio] = useState(mentor?.bio ?? "");
   const [avatar, setAvatar] = useState(mentor?.avatar ?? "");
-  const [currentRole, setCurrentRole] = useState(mentor?.current_role ?? "");
+  const [currentPosition, setCurrentRole] = useState(mentor?.current_position ?? "");
   const [yearsExperience, setYearsExperience] = useState(mentor?.years_experience ?? 0);
   const [pastCompanies, setPastCompanies] = useState(mentor?.past_companies.join(", ") ?? "");
   const [industries, setIndustries] = useState(mentor?.industries.join(", ") ?? "");
@@ -71,7 +71,7 @@ export default function MentorEditForm({ expertise, mentor }: Props) {
       short_bio: shortBio.trim() || null,
       bio: bio.trim() || null,
       avatar: avatar.trim() || null,
-      current_role: currentRole.trim() || null,
+      current_position: currentPosition.trim() || null,
       years_experience: yearsExperience,
       past_companies: pastCompanies.split(",").map((s) => s.trim()).filter(Boolean),
       industries: industries.split(",").map((s) => s.trim()).filter(Boolean),
@@ -202,7 +202,7 @@ export default function MentorEditForm({ expertise, mentor }: Props) {
           <label className="block text-sm text-gray-400 mb-1.5">Chức vụ hiện tại</label>
           <input
             type="text"
-            value={currentRole}
+            value={currentPosition}
             onChange={(e) => setCurrentRole(e.target.value)}
             className="input-dark w-full"
             placeholder="CEO at Acme"

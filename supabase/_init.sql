@@ -2369,7 +2369,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_abandoned
 -- BEGIN: migrations/20250518_affiliate_unique_order.sql
 -- -----------------------------------------------------------------------------
 -- Prevent duplicate affiliate conversions from webhook retries
-ALTER TABLE affiliate_conversions ADD CONSTRAINT affiliate_conversions_order_id_unique UNIQUE (order_id);
+do $idempotent$ begin alter table affiliate_conversions add constraint affiliate_conversions_order_id_unique unique (order_id); exception when duplicate_object then null; when duplicate_table then null; end $idempotent$;
 
 
 -- END: migrations/20250518_affiliate_unique_order.sql
@@ -4229,17 +4229,11 @@ notify pgrst, 'reload schema';
 -- ---------------------------------------------------------------------------
 -- SECTION: _backfill_subscribers.sql
 -- ---------------------------------------------------------------------------
-insert into public.subscribers (email, full_name, status, source, tags, user_id, subscribed_at) select lower(u.email), coalesce(u.raw_user_meta_data->>'full_name', p.full_name), 'active', 'website_registration', array['registered_user'], u.id, u.created_at from auth.users u left join public.profiles p on p.id=u.id where not exists (select 1 from public.subscribers s where lower(s.email)=lower(u.email)) returning email, full_name, source
+insert into public.subscribers (email, full_name, status, source, tags, user_id, subscribed_at) select lower(u.email), coalesce(u.raw_user_meta_data->>'full_name', p.full_name), 'active', 'website_registration', array['registered_user'], u.id, u.created_at from auth.users u left join public.profiles p on p.id=u.id where not exists (select 1 from public.subscribers s where lower(s.email)=lower(u.email)) returning email, full_name, source;
 
 
 -- ---------------------------------------------------------------------------
--- SECTION: _manual_confirm_order.sql
--- ---------------------------------------------------------------------------
-begin;
-update public.orders set status='paid', paid_at=now(), updated_at=now(), sepay_txn_id='MANUAL-ADMIN-CONFIRM-' || extract(epoch from now())::bigint::text, note=coalesce(note,'') || ' [Admin confirmed - SePay webhook not fired]' where order_code='DKKQbZ6Nu5TM8m';
-insert into public.enrollments (user_id, product_id, source) values ('bb781e5a-5df9-44d5-9cba-f4331aaad449', '6cc8b72d-125f-4208-beb0-a3b21b327a6f', 'purchase') on conflict (user_id, product_id) do update set source='purchase';
-commit;
-select o.order_code, o.status, o.paid_at, e.product_id, e.source from public.orders o left join public.enrollments e on e.user_id=o.user_id and e.product_id=o.product_id where o.order_code='DKKQbZ6Nu5TM8m';
+-- SECTION: _manual_confirm_order.sql  -- SKIPPED: was a one-time admin patch from taitue.academy
 
 
 -- ---------------------------------------------------------------------------

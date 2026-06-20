@@ -121,10 +121,10 @@ export default async function MentorProfilePage({ params }: PageProps) {
                   {mentor.full_name}
                 </h1>
                 {mentor.title && <p className="text-base text-gray-400 mb-3 text-center sm:text-left">{mentor.title}</p>}
-                {mentor.current_role && (
+                {mentor.current_position && (
                   <p className="text-sm text-gray-300 mb-4 flex items-center gap-2 justify-center sm:justify-start">
                     <Building2 size={14} className="text-gray-500" />
-                    {mentor.current_role}
+                    {mentor.current_position}
                   </p>
                 )}
 

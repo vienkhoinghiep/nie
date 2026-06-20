@@ -25,7 +25,7 @@ export interface Mentor {
   expertise_tags: string[];
   industries: string[];
   years_experience: number;
-  current_role: string | null;
+  current_position: string | null;
   past_companies: string[];
   education: string | null;
   languages: string[];

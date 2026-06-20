@@ -63,7 +63,7 @@ create table if not exists public.mentors (
   expertise_tags      text[] default '{}',           -- references mentor_expertise.slug
   industries          text[] default '{}',           -- e.g. ['fintech', 'edtech']
   years_experience    integer default 0,
-  current_role        text,                          -- "CTO at Acme"
+  current_position        text,                          -- "CTO at Acme"
   past_companies      text[] default '{}',
   education           text,                          -- one-line summary
   languages           text[] default '{vi}',         -- ['vi', 'en', ...]
@@ -231,14 +231,14 @@ create trigger tr_mentor_rating_change
 
 
 -- ─── updated_at trigger (reuse from _init.sql if available) ──────────────────
--- _init.sql defines `public.touch_updated_at()` already; reuse it.
+-- _init.sql defines `public.handle_updated_at()` already; reuse it.
 drop trigger if exists tr_mentors_updated_at on public.mentors;
 create trigger tr_mentors_updated_at before update on public.mentors
-  for each row execute function public.touch_updated_at();
+  for each row execute function public.handle_updated_at();
 
 drop trigger if exists tr_mentor_sessions_updated_at on public.mentor_sessions;
 create trigger tr_mentor_sessions_updated_at before update on public.mentor_sessions
-  for each row execute function public.touch_updated_at();
+  for each row execute function public.handle_updated_at();
 
 
 -- ─── RLS — Row Level Security ────────────────────────────────────────────────
