@@ -21,8 +21,8 @@ import {
 } from "lucide-react";
 
 const courseSubNav = [
-  { href: "/courses?cat=personal", icon: Sparkles, label: "Tài Chính - Đầu Tư", color: "#2563EB" },
-  { href: "/courses?cat=business", icon: TrendingUp, label: "Khởi Nghiệp Kinh Doanh", color: "#3b82f6" },
+  { href: "/courses?cat=chuyen-gia-knqg", icon: Crown, label: "Chuyên Gia Khởi Nghiệp QG", color: "#D4A843" },
+  { href: "/courses?cat=tinh-hoa-quan-tri", icon: Sparkles, label: "Tinh Hoa Quản Trị & Khởi Nghiệp", color: "#2563EB" },
 ];
 
 const solutionSubNav = [

@@ -36,7 +36,7 @@ export const siteConfig = {
       process.env.NEXT_PUBLIC_OWNER_BIO,
       "Tổ chức nghiên cứu, đào tạo và mentoring cho cộng đồng khởi nghiệp Việt Nam."
     ),
-    avatar: pick(process.env.NEXT_PUBLIC_OWNER_AVATAR, "/images/about/logo.png"),
+    avatar: pick(process.env.NEXT_PUBLIC_OWNER_AVATAR, "/images/about/logo.jpg"),
   },
 
   // ─── Colors (CSS values) ───

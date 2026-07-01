@@ -3,71 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Gift, ChevronDown, Crown, Target, BarChart3, Sparkles, Droplets, Umbrella, Armchair, Menu, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Search, Menu, X, User, ChevronDown } from "lucide-react";
 import UserAvatar from "@/components/admin/UserAvatar";
 import { siteConfig } from "@/lib/site-config";
-
-const SOLUTIONS = [
-  {
-    href: "/blueprint",
-    label: "Entrepreneur Financial Blueprint™",
-    desc: "Bản đồ tài chính toàn cảnh cho doanh chủ",
-    icon: BarChart3,
-    color: "#3b82f6",
-  },
-  {
-    href: "/giai-phap-toan-dien",
-    label: "Entrepreneur Financial OS™ PRO",
-    desc: "Hệ thống hoạch định tài chính nâng cao",
-    icon: Sparkles,
-    color: "#a855f7",
-  },
-  {
-    href: "/entrepreneur-financial-mentor",
-    label: "Entrepreneur Financial Mentor™",
-    desc: "Đồng hành cùng chuyên gia hoạch định 1-1",
-    icon: Crown,
-    color: "#2563EB",
-  },
-];
-
-const TOOLS = [
-  {
-    href: "/tools/hoach-dinh-dong-tien",
-    label: "Hoạch Định Dòng Tiền",
-    desc: "Bản đồ xô chảy tràn — phân bổ thu nhập 5 quỹ · Miễn phí khi đăng ký",
-    icon: Droplets,
-    color: "#06b6d4",
-  },
-  {
-    href: "/tools/ke-hoach-bao-hiem",
-    label: "Kế Hoạch Bảo Hiểm",
-    desc: "Tính nhu cầu bảo hiểm theo công thức DIME · Miễn phí khi đăng ký",
-    icon: Umbrella,
-    color: "#10b981",
-  },
-  {
-    href: "/tools/nghi-huu-an-nhan",
-    label: "Nghỉ Hưu An Nhàn",
-    desc: "Số tiền cần tích lũy & lộ trình đầu tư hưu trí · Miễn phí khi đăng ký",
-    icon: Armchair,
-    color: "#f59e0b",
-  },
-  {
-    href: "/tools/dau-tu-muc-tieu",
-    label: "Đầu Tư Theo Mục Tiêu",
-    desc: "Compound interest + biểu đồ tăng trưởng · Miễn phí khi đăng ký",
-    icon: Target,
-    color: "#a855f7",
-  },
-  {
-    href: "/blueprint",
-    label: "Entrepreneur Financial Blueprint™",
-    desc: "Báo cáo tổng hợp 4 phần — dành cho học viên đặt cọc 498.526đ",
-    icon: Crown,
-    color: "#2563EB",
-  },
-];
 
 interface PublicHeaderProps {
   user?: {
@@ -77,27 +16,77 @@ interface PublicHeaderProps {
   } | null;
 }
 
-export default function PublicHeader({ user }: PublicHeaderProps) {
-  const [solOpen, setSolOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const solRef = useRef<HTMLDivElement>(null);
-  const toolsRef = useRef<HTMLDivElement>(null);
+interface MenuItem {
+  href: string;
+  label: string;
+  children?: { href: string; label: string }[];
+}
 
-  // Close dropdowns on outside click
+const MENU: MenuItem[] = [
+  { href: "/", label: "TRANG CHỦ" },
+  {
+    href: "/gioi-thieu",
+    label: "GIỚI THIỆU",
+    children: [
+      { href: "/gioi-thieu/ve-chung-toi", label: "Về chúng tôi" },
+      { href: "/gioi-thieu/chuc-nang-nhiem-vu", label: "Chức năng & nhiệm vụ" },
+      { href: "/gioi-thieu/ban-lanh-dao", label: "Ban lãnh đạo Viện" },
+      { href: "/gioi-thieu/ban-co-van", label: "Ban cố vấn cao cấp" },
+    ],
+  },
+  {
+    href: "/mentor-khoi-nghiep",
+    label: "MENTOR KHỞI NGHIỆP",
+    children: [
+      { href: "/mentor-khoi-nghiep/mentee", label: "Dành cho Mentee" },
+      { href: "/mentor-khoi-nghiep/mentor", label: "Trở thành Mentor" },
+    ],
+  },
+  { href: "/courses", label: "KHÓA HỌC" },
+  { href: "/shop", label: "SÁCH KHỞI NGHIỆP" },
+  { href: "/blog", label: "CHIA SẺ KIẾN THỨC" },
+];
+
+const NAVY = "#0f1c3a";
+const GOLD = "#D4A843";
+
+export default function PublicHeader({ user }: PublicHeaderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const submenuRef = useRef<HTMLUListElement>(null);
+
+  function isActive(href: string) {
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  }
+
+  // Close dropdown on outside click
   useEffect(() => {
-    if (!solOpen && !toolsOpen) return;
+    if (!openSubmenu) return;
     const onClick = (e: MouseEvent) => {
-      if (solRef.current && !solRef.current.contains(e.target as Node)) {
-        setSolOpen(false);
-      }
-      if (toolsRef.current && !toolsRef.current.contains(e.target as Node)) {
-        setToolsOpen(false);
+      if (submenuRef.current && !submenuRef.current.contains(e.target as Node)) {
+        setOpenSubmenu(null);
       }
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [solOpen, toolsOpen]);
+  }, [openSubmenu]);
+
+  // Close dropdown on route change
+  useEffect(() => {
+    setOpenSubmenu(null);
+  }, [pathname]);
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!query.trim()) return;
+    router.push(`/blog?q=${encodeURIComponent(query.trim())}`);
+    setSearchOpen(false);
+  }
 
   const initials = user?.full_name
     ? user.full_name
@@ -112,323 +101,321 @@ export default function PublicHeader({ user }: PublicHeaderProps) {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-50"
+      className="sticky top-0 z-50"
       style={{
-        background: "rgba(10,10,10,0.92)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid #1a1a1a",
+        background: `linear-gradient(180deg, #0a0a0a 0%, ${NAVY} 100%)`,
+        borderBottom: `2px solid ${GOLD}`,
       }}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-6 h-14">
-        {/* Left: Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image
-            src={siteConfig.owner.avatar}
-            alt={siteConfig.name}
-            width={32}
-            height={32}
-            sizes="32px"
-            className="w-8 h-8 rounded-lg object-cover"
-          />
-          <span className="text-sm font-bold text-white leading-tight hidden sm:block">
-            {siteConfig.name}
-          </span>
+      {/* ─── Top row: logo + search + user ─── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
+        {/* Mobile hamburger */}
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="md:hidden text-white p-1.5"
+          aria-label="Mở menu"
+        >
+          <Menu size={22} />
+        </button>
+
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-3 flex-1 md:flex-initial md:mx-auto">
+          <div className="relative w-12 h-12 sm:w-14 sm:h-14 shrink-0">
+            <Image
+              src={siteConfig.owner.avatar}
+              alt={siteConfig.name}
+              fill
+              sizes="56px"
+              className="object-contain"
+              priority
+            />
+          </div>
+          <div className="hidden sm:block text-center">
+            <div className="text-sm font-bold tracking-wide leading-tight max-w-[260px]" style={{ color: GOLD }}>
+              {siteConfig.name}
+            </div>
+          </div>
         </Link>
 
-        {/* Center Nav Links — hidden on mobile */}
-        <nav className="hidden md:flex items-center gap-6">
-          <Link href="/courses" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Khoá học
-          </Link>
-          <Link href="/mentors" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Mentor 1-1
-          </Link>
-
-          {/* Giải pháp — dropdown */}
-          <div className="relative" ref={solRef}>
-            <button
-              type="button"
-              onClick={() => setSolOpen((v) => !v)}
-              onMouseEnter={() => setSolOpen(true)}
-              className="flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors"
-              aria-expanded={solOpen}
-              aria-haspopup="menu"
-            >
-              Giải pháp
-              <ChevronDown
-                size={13}
-                className={`transition-transform ${solOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {solOpen && (
-              <div
-                role="menu"
-                onMouseLeave={() => setSolOpen(false)}
-                className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 rounded-xl overflow-hidden"
-                style={{
-                  background: "rgba(15,15,15,0.98)",
-                  border: "1px solid #2a2a2a",
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
-                }}
-              >
-                {SOLUTIONS.map((s) => {
-                  const Icon = s.icon;
-                  return (
-                    <Link
-                      key={s.href}
-                      href={s.href}
-                      onClick={() => setSolOpen(false)}
-                      className="flex items-start gap-3 px-4 py-3 hover:bg-[#1a1a1a] transition-colors"
-                    >
-                      <div
-                        className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                        style={{ background: `${s.color}1a`, color: s.color }}
-                      >
-                        <Icon size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-white leading-tight">
-                          {s.label}
-                        </div>
-                        <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                          {s.desc}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Công cụ — dropdown */}
-          <div className="relative" ref={toolsRef}>
-            <button
-              type="button"
-              onClick={() => setToolsOpen((v) => !v)}
-              onMouseEnter={() => setToolsOpen(true)}
-              className="flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors"
-              aria-expanded={toolsOpen}
-              aria-haspopup="menu"
-            >
-              Công cụ
-              <ChevronDown
-                size={13}
-                className={`transition-transform ${toolsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {toolsOpen && (
-              <div
-                role="menu"
-                onMouseLeave={() => setToolsOpen(false)}
-                className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 rounded-xl overflow-hidden"
-                style={{
-                  background: "rgba(15,15,15,0.98)",
-                  border: "1px solid #2a2a2a",
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
-                }}
-              >
-                {TOOLS.map((t) => {
-                  const Icon = t.icon;
-                  return (
-                    <Link
-                      key={t.href}
-                      href={t.href}
-                      onClick={() => setToolsOpen(false)}
-                      className="flex items-start gap-3 px-4 py-3 hover:bg-[#1a1a1a] transition-colors"
-                    >
-                      <div
-                        className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                        style={{ background: `${t.color}1a`, color: t.color }}
-                      >
-                        <Icon size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-white leading-tight">
-                          {t.label}
-                        </div>
-                        <div className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                          {t.desc}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <Link href="/shop" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Cửa hàng
-          </Link>
-          <Link href="/events" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Hội thảo
-          </Link>
-          <Link href="/blog" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Blog
-          </Link>
-          <a
-            href={`mailto:info@${siteConfig.domain}`}
-            className="text-sm text-gray-400 hover:text-white transition-colors"
+        {/* Right: search + user */}
+        <div className="flex items-center gap-2 md:gap-3 ml-auto">
+          {/* Desktop search */}
+          <form
+            onSubmit={handleSearch}
+            className="hidden md:flex items-center w-72 lg:w-96 rounded-lg overflow-hidden"
+            style={{ border: `1px solid ${GOLD}44`, background: "rgba(255,255,255,0.04)" }}
           >
-            Liên hệ
-          </a>
-        </nav>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nhập từ khoá tìm kiếm"
+              className="flex-1 bg-transparent text-sm text-white placeholder:text-gray-500 px-3 py-2 outline-none"
+            />
+            <button
+              type="submit"
+              className="px-3 py-2 text-white"
+              style={{ background: GOLD, color: NAVY }}
+              aria-label="Tìm kiếm"
+            >
+              <Search size={16} />
+            </button>
+          </form>
 
-        {/* Right side */}
-        <div className="flex items-center gap-3">
+          {/* Mobile search icon */}
+          <button
+            type="button"
+            onClick={() => setSearchOpen((v) => !v)}
+            className="md:hidden p-2 text-white"
+            aria-label="Tìm kiếm"
+          >
+            <Search size={18} />
+          </button>
+
           {user ? (
-            <>
-              {/* Avatar */}
+            <Link href="/dashboard" className="flex items-center gap-2">
               <UserAvatar
                 src={user.avatar_url}
                 initials={initials}
                 size={32}
-                gradient="linear-gradient(135deg, #2563EB, #059669)"
+                gradient={`linear-gradient(135deg, #2563EB, ${GOLD})`}
               />
-              <Link
-                href="/dashboard"
-                className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
-              >
-                Dashboard
-              </Link>
-            </>
+              <span className="hidden lg:inline text-sm font-medium text-white">Dashboard</span>
+            </Link>
           ) : (
-            <>
+            <div className="flex items-center gap-2">
               <Link
                 href="/login"
-                className="hidden sm:inline-block text-sm text-gray-400 hover:text-white transition-colors"
+                className="hidden sm:inline-flex items-center gap-1.5 text-sm text-gray-300 hover:text-white"
               >
-                Đăng nhập
+                <User size={15} /> Đăng nhập
               </Link>
               <Link
                 href="/register"
-                className="inline-flex items-center gap-1.5 text-sm font-semibold py-1.5 px-4 rounded-lg transition-all"
-                style={{
-                  background: "linear-gradient(135deg, #FFD814, #FFA41C)",
-                  color: "#131921",
-                }}
+                className="inline-flex items-center px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider whitespace-nowrap"
+                style={{ background: GOLD, color: NAVY }}
               >
-                <Gift size={14} />
-                Nhận quà miễn phí
+                Đăng ký
               </Link>
-            </>
+            </div>
           )}
-
-          {/* Hamburger — chỉ hiện trên mobile */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen((v) => !v)}
-            className="md:hidden inline-flex items-center justify-center w-9 h-9 -mr-1 rounded-lg text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
-            aria-label="Mở menu"
-            aria-expanded={mobileOpen}
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
         </div>
       </div>
 
-      {/* ─── Menu mobile ─── */}
+      {/* Mobile search bar — slide down */}
+      {searchOpen && (
+        <div className="md:hidden px-4 pb-3">
+          <form
+            onSubmit={handleSearch}
+            className="flex items-center rounded-lg overflow-hidden"
+            style={{ border: `1px solid ${GOLD}44`, background: "rgba(255,255,255,0.04)" }}
+          >
+            <input
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nhập từ khoá tìm kiếm"
+              className="flex-1 bg-transparent text-sm text-white placeholder:text-gray-500 px-3 py-2 outline-none"
+            />
+            <button
+              type="submit"
+              className="px-3 py-2"
+              style={{ background: GOLD, color: NAVY }}
+              aria-label="Tìm kiếm"
+            >
+              <Search size={16} />
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ─── Bottom row: menu ─── */}
+      <nav
+        className="hidden md:block"
+        style={{ background: "rgba(0,0,0,0.35)", borderTop: `1px solid ${GOLD}22` }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <ul ref={submenuRef} className="flex items-center justify-center gap-1 lg:gap-2 relative">
+            {MENU.map((item) => {
+              const active = isActive(item.href);
+              const hasChildren = item.children && item.children.length > 0;
+              const isOpen = openSubmenu === item.href;
+
+              if (!hasChildren) {
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className="block px-3 lg:px-4 py-3 text-[12px] lg:text-[13px] font-bold tracking-wider transition-colors relative"
+                      style={{ color: active ? GOLD : "#e5e7eb" }}
+                    >
+                      {item.label}
+                      {active && (
+                        <span
+                          className="absolute left-1/2 -translate-x-1/2 bottom-0 w-8 h-[3px] rounded-t"
+                          style={{ background: GOLD }}
+                        />
+                      )}
+                    </Link>
+                  </li>
+                );
+              }
+
+              return (
+                <li
+                  key={item.href}
+                  className="relative"
+                  onMouseEnter={() => setOpenSubmenu(item.href)}
+                  onMouseLeave={() => setOpenSubmenu(null)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenSubmenu(isOpen ? null : item.href)}
+                    className="flex items-center gap-1 px-3 lg:px-4 py-3 text-[12px] lg:text-[13px] font-bold tracking-wider transition-colors relative"
+                    style={{ color: active ? GOLD : "#e5e7eb" }}
+                    aria-expanded={isOpen}
+                    aria-haspopup="menu"
+                  >
+                    {item.label}
+                    <ChevronDown
+                      size={13}
+                      className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    />
+                    {active && (
+                      <span
+                        className="absolute left-1/2 -translate-x-1/2 bottom-0 w-8 h-[3px] rounded-t"
+                        style={{ background: GOLD }}
+                      />
+                    )}
+                  </button>
+                  {isOpen && (
+                    <ul
+                      role="menu"
+                      className="absolute left-1/2 -translate-x-1/2 top-full min-w-[240px] rounded-b-lg overflow-hidden shadow-2xl"
+                      style={{
+                        background: NAVY,
+                        border: `1px solid ${GOLD}55`,
+                        borderTop: "none",
+                      }}
+                    >
+                      {item.children!.map((child, idx) => {
+                        const childActive = pathname === child.href;
+                        return (
+                          <li
+                            key={child.href}
+                            style={{
+                              borderTop: idx === 0 ? "none" : `1px solid ${GOLD}22`,
+                            }}
+                          >
+                            <Link
+                              href={child.href}
+                              onClick={() => setOpenSubmenu(null)}
+                              className="block px-5 py-3 text-[13px] font-bold uppercase tracking-wider transition-colors"
+                              style={{
+                                color: childActive ? GOLD : "#e5e7eb",
+                                background: childActive ? `${GOLD}11` : "transparent",
+                              }}
+                            >
+                              {child.label}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </nav>
+
+      {/* ─── Mobile drawer ─── */}
       {mobileOpen && (
         <div
-          className="md:hidden border-t border-[#1a1a1a]"
-          style={{
-            background: "rgba(10,10,10,0.98)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-          }}
+          className="fixed inset-0 z-[60] md:hidden"
+          onClick={() => setMobileOpen(false)}
+          style={{ background: "rgba(0,0,0,0.7)" }}
         >
-          <nav className="max-w-7xl mx-auto px-4 py-3 flex flex-col max-h-[calc(100vh-3.5rem)] overflow-y-auto">
-            <Link
-              href="/courses"
-              onClick={() => setMobileOpen(false)}
-              className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors"
-            >
-              Khoá học
-            </Link>
-            <Link
-              href="/mentors"
-              onClick={() => setMobileOpen(false)}
-              className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors"
-            >
-              Mentor 1-1
-            </Link>
-
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold px-1 pt-3 pb-1">
-              Giải pháp
+          <aside
+            className="absolute left-0 top-0 bottom-0 w-72 max-w-[80vw] overflow-y-auto"
+            style={{ background: NAVY, borderRight: `2px solid ${GOLD}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: `${GOLD}33` }}>
+              <div className="flex items-center gap-2">
+                <Image src={siteConfig.owner.avatar} alt={siteConfig.name} width={36} height={36} className="object-contain" />
+                <div className="text-xs font-bold leading-tight max-w-[180px]" style={{ color: GOLD }}>{siteConfig.name}</div>
+              </div>
+              <button onClick={() => setMobileOpen(false)} className="text-white p-1" aria-label="Đóng">
+                <X size={20} />
+              </button>
             </div>
-            {SOLUTIONS.map((s) => {
-              const Icon = s.icon;
-              return (
-                <Link
-                  key={s.href}
-                  href={s.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 py-2.5"
-                >
-                  <div
-                    className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: `${s.color}1a`, color: s.color }}
-                  >
-                    <Icon size={15} />
-                  </div>
-                  <span className="text-sm text-gray-200">{s.label}</span>
-                </Link>
-              );
-            })}
-
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold px-1 pt-3 pb-1">
-              Công cụ
-            </div>
-            {TOOLS.map((t) => {
-              const Icon = t.icon;
-              return (
-                <Link
-                  key={t.href}
-                  href={t.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 py-2.5"
-                >
-                  <div
-                    className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: `${t.color}1a`, color: t.color }}
-                  >
-                    <Icon size={15} />
-                  </div>
-                  <span className="text-sm text-gray-200">{t.label}</span>
-                </Link>
-              );
-            })}
-
-            <div className="h-px my-2 bg-[#1f1f1f]" />
-            <Link href="/shop" onClick={() => setMobileOpen(false)} className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors">
-              Cửa hàng
-            </Link>
-            <Link href="/events" onClick={() => setMobileOpen(false)} className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors">
-              Hội thảo
-            </Link>
-            <Link href="/blog" onClick={() => setMobileOpen(false)} className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors">
-              Blog
-            </Link>
-            <a
-              href={`mailto:info@${siteConfig.domain}`}
-              onClick={() => setMobileOpen(false)}
-              className="py-2.5 text-[15px] text-gray-200 hover:text-white transition-colors"
-            >
-              Liên hệ
-            </a>
-
+            <ul className="py-2">
+              {MENU.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      className="block px-5 py-3 text-sm font-bold uppercase tracking-wider transition-colors"
+                      style={{
+                        color: active ? GOLD : "#e5e7eb",
+                        background: active ? `${GOLD}11` : "transparent",
+                        borderLeft: active ? `3px solid ${GOLD}` : "3px solid transparent",
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                    {item.children && (
+                      <ul className="pl-4 pb-1">
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href;
+                          return (
+                            <li key={child.href}>
+                              <Link
+                                href={child.href}
+                                onClick={() => setMobileOpen(false)}
+                                className="block px-5 py-2 text-xs transition-colors"
+                                style={{
+                                  color: childActive ? GOLD : "#cbd5e1",
+                                  borderLeft: `2px solid ${GOLD}33`,
+                                }}
+                              >
+                                • {child.label}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
             {!user && (
-              <Link
-                href="/login"
-                onClick={() => setMobileOpen(false)}
-                className="py-2.5 text-[15px] text-gray-300 hover:text-white transition-colors"
-              >
-                Đăng nhập
-              </Link>
+              <div className="px-5 pt-4 border-t" style={{ borderColor: `${GOLD}33` }}>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="block py-2 text-sm text-gray-300"
+                >
+                  Đăng nhập
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setMobileOpen(false)}
+                  className="inline-block mt-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider"
+                  style={{ background: GOLD, color: NAVY }}
+                >
+                  Đăng ký
+                </Link>
+              </div>
             )}
-          </nav>
+          </aside>
         </div>
       )}
     </header>
