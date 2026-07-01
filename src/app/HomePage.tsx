@@ -25,8 +25,6 @@ import {
 } from "lucide-react";
 import type { Mentor, MentorExpertise } from "@/types/mentor";
 
-export const dynamic = "force-dynamic";
-
 const BRAND = siteConfig.colors.brand;          // #2563EB (classic blue)
 const NAVY = "#0f1c3a";                          // logo navy
 const GOLD = "#D4A843";                          // logo gold accent

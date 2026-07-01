@@ -4,6 +4,8 @@ import HomePage from "./HomePage";
 
 const BASE_URL = getBaseUrl();
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: `${siteConfig.name} — ${siteConfig.tagline}`,
   description: siteConfig.description,
